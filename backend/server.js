@@ -1,3 +1,4 @@
+require('dotenv').config(); // Lokal testlerde .env dosyasını okumak için
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -8,17 +9,19 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-
-
+// --- EKSİK OLAN TANIMLAMALAR (BURAYI KONTROL EDİN) ---
+const PORT = process.env.PORT || 5000; 
+const JWT_SECRET = process.env.JWT_SECRET || "varsayilan_gecici_anahtar";
 const MONGODB_URI = process.env.MONGODB_URI;
 
-// Bağlantı öncesi URI'nin varlığını kontrol ediyoruz:
+// MONGODB_URI Güvenlik Kontrolü
 if (!MONGODB_URI) {
   console.error("HATA: MONGODB_URI çevre değişkeni bulunamadı!");
   console.error("Lütfen Render panelindeki Environment sekmesinden MONGODB_URI değişkenini tanımlayın.");
-  process.exit(1); // Sunucuyu güvenli şekilde durdur
+  process.exit(1); 
 }
 
+// MongoDB Bağlantısı
 mongoose.connect(MONGODB_URI)
   .then(() => console.log("MongoDB bağlantısı başarılı."))
   .catch(err => console.error("MongoDB bağlantı hatası:", err));
