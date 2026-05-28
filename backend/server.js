@@ -13,7 +13,7 @@ app.use(cors());
 // server.js içindeki eski satırları bunlarla değiştirin:
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "varsayilan_gecici_anahtar";
-const MONGODB_URI = process.env.MONGODB_URI; mongodb+srv://oplyniorx_db_user:<fCA50daw5RlRRENA>@mafiarpg.3cxwa5t.mongodb.net/?appName=mafiarpg
+const MONGODB_URI = process.env.MONGODB_URI;
 
 mongoose.connect(MONGODB_URI)
   .then(() => console.log("MongoDB bağlantısı başarılı."))
