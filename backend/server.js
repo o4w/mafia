@@ -10,10 +10,14 @@ app.use(cors());
 
 
 
-// server.js içindeki eski satırları bunlarla değiştirin:
-const PORT = process.env.PORT || 5000;
-const JWT_SECRET = process.env.JWT_SECRET || "varsayilan_gecici_anahtar";
 const MONGODB_URI = process.env.MONGODB_URI;
+
+// Bağlantı öncesi URI'nin varlığını kontrol ediyoruz:
+if (!MONGODB_URI) {
+  console.error("HATA: MONGODB_URI çevre değişkeni bulunamadı!");
+  console.error("Lütfen Render panelindeki Environment sekmesinden MONGODB_URI değişkenini tanımlayın.");
+  process.exit(1); // Sunucuyu güvenli şekilde durdur
+}
 
 mongoose.connect(MONGODB_URI)
   .then(() => console.log("MongoDB bağlantısı başarılı."))
