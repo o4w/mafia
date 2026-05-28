@@ -8,10 +8,14 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-const JWT_SECRET = "mafia_gizli_anahtar_123";
-const PORT = 5000;
 
-mongoose.connect('mongodb://127.0.0.1:27017/mafiardg')
+
+// server.js içindeki eski satırları bunlarla değiştirin:
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = process.env.JWT_SECRET || "varsayilan_gecici_anahtar";
+const MONGODB_URI = process.env.MONGODB_URI; mongodb+srv://oplyniorx_db_user:<fCA50daw5RlRRENA>@mafiarpg.3cxwa5t.mongodb.net/?appName=mafiarpg
+
+mongoose.connect(MONGODB_URI)
   .then(() => console.log("MongoDB bağlantısı başarılı."))
   .catch(err => console.error("MongoDB bağlantı hatası:", err));
 
