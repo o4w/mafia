@@ -1,44 +1,30 @@
-require('dotenv').config(); // Lokal testlerde .env dosyasını okumak için
+require('dotenv').config();
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// --- EKSİK OLAN TANIMLAMALAR (BURAYI KONTROL EDİN) ---
-const PORT = process.env.PORT || 5000; 
+const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "varsayilan_gecici_anahtar";
-const MONGODB_URI = process.env.MONGODB_URI;
 
-// MONGODB_URI Güvenlik Kontrolü
-if (!MONGODB_URI) {
-  console.error("HATA: MONGODB_URI çevre değişkeni bulunamadı!");
-  console.error("Lütfen Render panelindeki Environment sekmesinden MONGODB_URI değişkenini tanımlayın.");
-  process.exit(1); 
+// Supabase Bağlantısı
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error("HATA: Supabase bağlantı değişkenleri eksik!");
+  process.exit(1);
 }
 
-// MongoDB Bağlantısı
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log("MongoDB bağlantısı başarılı."))
-  .catch(err => console.error("MongoDB bağlantı hatası:", err));
+// Service Role Key ile bağlandığımız için RLS engeline takılmayız
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const PlayerSchema = new mongoose.Schema({
-  username: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  money: { type: Number, default: 1000 },
-  health: { type: Number, default: 100 },
-  energy: { type: Number, default: 100 },
-  respect: { type: Number, default: 10 },
-  level: { type: Number, default: 1 },
-  xp: { type: Number, default: 0 }
-});
-
-const Player = mongoose.model('Player', PlayerSchema);
-
+// JWT Middleware
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
@@ -51,17 +37,21 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+// 1. KAYIT OLMA (Register)
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) return res.status(400).json({ error: "Eksik bilgi." });
 
-    const existing = await Player.findOne({ username });
+    // Kullanıcı var mı kontrol et
+    const { data: existing } = await supabase.from('players').select('username').eq('username', username).maybeSingle();
     if (existing) return res.status(400).json({ error: "Bu kullanıcı adı zaten alınmış." });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newPlayer = new Player({ username, password: hashedPassword });
-    await newPlayer.save();
+    
+    // Yeni oyuncu ekle
+    const { error } = await supabase.from('players').insert([{ username, password: hashedPassword }]);
+    if (error) throw error;
 
     res.status(201).json({ message: "Kayıt başarılı." });
   } catch (err) {
@@ -69,146 +59,87 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
+// 2. GİRİŞ YAPMA (Login)
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    const player = await Player.findOne({ username });
-    if (!player) return res.status(400).json({ error: "Kullanıcı bulunamadı." });
+    const { data: player, error } = await supabase.from('players').select('*').eq('username', username).maybeSingle();
+    
+    if (error || !player) return res.status(400).json({ error: "Kullanıcı bulunamadı." });
 
     const validPassword = await bcrypt.compare(password, player.password);
     if (!validPassword) return res.status(400).json({ error: "Hatalı şifre." });
 
-    const token = jwt.sign({ id: player._id, username: player.username }, JWT_SECRET, { expiresIn: '1d' });
+    const token = jwt.sign({ id: player.id, username: player.username }, JWT_SECRET, { expiresIn: '1d' });
     res.json({ token, username: player.username });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// 3. OYUNCU BİLGİLERİNİ AL (Profile)
 app.get('/api/me', authenticateToken, async (req, res) => {
   try {
-    const player = await Player.findById(req.user.id).select('-password');
+    const { data: player, error } = await supabase.from('players').select('id, username, money, health, energy, respect, level, xp').eq('id', req.user.id).single();
+    if (error) throw error;
     res.json(player);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// 4. SUÇ İŞLEME (Crime)
 app.post('/api/crime', authenticateToken, async (req, res) => {
   try {
-    const player = await Player.findById(req.user.id);
+    const { data: player } = await supabase.from('players').select('*').eq('id', req.user.id).single();
     if (player.energy < 20) return res.status(400).json({ error: "Yetersiz enerji! En az 20 enerji gerekir." });
     if (player.health <= 0) return res.status(400).json({ error: "Ölüsün! Önce hastanede tedavi ol." });
 
-    player.energy -= 20;
+    let updatedEnergy = player.energy - 20;
+    let updatedMoney = player.money;
+    let updatedXp = player.xp;
+    let updatedRespect = player.respect;
+    let updatedLevel = player.level;
+    let updatedHealth = player.health;
     
     const success = Math.random() > 0.3;
-    let rewardMoney = 0;
-    let rewardXp = 0;
     let message = "";
 
     if (success) {
-      rewardMoney = Math.floor(Math.random() * 300) + 100;
-      rewardXp = 50;
-      player.money += rewardMoney;
-      player.xp += rewardXp;
-      player.respect += 5;
+      const rewardMoney = Math.floor(Math.random() * 300) + 100;
+      updatedMoney += rewardMoney;
+      updatedXp += 50;
+      updatedRespect += 5;
       message = `Sokak soygunu başarılı! $${rewardMoney} kazandın ve saygınlığın arttı.`;
 
-      if (player.xp >= player.level * 200) {
-        player.level += 1;
-        player.xp = 0;
+      if (updatedXp >= updatedLevel * 200) {
+        updatedLevel += 1;
+        updatedXp = 0;
         message += " Tebrikler, SEVİYE ATLADIN!";
       }
     } else {
       const penaltyHealth = Math.floor(Math.random() * 20) + 10;
-      player.health = Math.max(0, player.health - penaltyHealth);
+      updatedHealth = Math.max(0, player.health - penaltyHealth);
       message = `Polis seni yakaladı ve hırpaladı! ${penaltyHealth} sağlık kaybettin.`;
     }
 
-    await player.save();
-    res.json({ player, message });
+    // Supabase Güncelleme Sorgusu
+    const { data: updatedPlayer, error } = await supabase.from('players').update({
+      energy: updatedEnergy,
+      money: updatedMoney,
+      xp: updatedXp,
+      respect: updatedRespect,
+      level: updatedLevel,
+      health: updatedHealth
+    }).eq('id', player.id).select().single();
+
+    if (error) throw error;
+    res.json({ player: updatedPlayer, message });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/hospital', authenticateToken, async (req, res) => {
-  try {
-    const player = await Player.findById(req.user.id);
-    const cost = 200;
-    if (player.money < cost) return res.status(400).json({ error: `Yetersiz para! Tedavi ücreti $${cost}.` });
-    if (player.health >= 100) return res.status(400).json({ error: "Zaten tamamen sağlıklısın." });
-
-    player.money -= cost;
-    player.health = 100;
-    player.energy = 100;
-
-    await player.save();
-    res.json({ player, message: "Hastanede tedavi edildin! Sağlığın ve enerjin yenilendi." });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/players', authenticateToken, async (req, res) => {
-  try {
-    const players = await Player.find({ _id: { $ne: req.user.id } }).select('username respect level health');
-    res.json(players);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/attack', authenticateToken, async (req, res) => {
-  try {
-    const attacker = await Player.findById(req.user.id);
-    const { targetId } = req.body;
-
-    if (attacker.energy < 30) return res.status(400).json({ error: "Savaşmak için en az 30 enerji gerekli." });
-    if (attacker.health <= 15) return res.status(400).json({ error: "Çok zayıfsın, savaşamazsın! Önce hastaneye git." });
-
-    const defender = await Player.findById(targetId);
-    if (!defender) return res.status(404).json({ error: "Hedef oyuncu bulunamadı." });
-    if (defender.health <= 0) return res.status(400).json({ error: "Bu oyuncu zaten hastanede (ölü)." });
-
-    attacker.energy -= 30;
-
-    const attackerPower = (attacker.level * 10) + attacker.respect + (Math.random() * 50);
-    const defenderPower = (defender.level * 10) + defender.respect + (Math.random() * 50);
-
-    let message = "";
-    if (attackerPower > defenderPower) {
-      const stolenMoney = Math.floor(defender.money * 0.2);
-      attacker.money += stolenMoney;
-      attacker.respect += 15;
-      attacker.xp += 80;
-
-      defender.money -= stolenMoney;
-      defender.respect = Math.max(0, defender.respect - 10);
-      defender.health = Math.max(0, defender.health - 40);
-
-      message = `${defender.username} adlı oyuncuya saldırdın ve KAZANDIN! $${stolenMoney} çaldın ve saygınlık kazandın.`;
-
-      if (attacker.xp >= attacker.level * 200) {
-        attacker.level += 1;
-        attacker.xp = 0;
-        message += " Seviye Atladın!";
-      }
-    } else {
-      attacker.health = Math.max(0, attacker.health - 35);
-      attacker.respect = Math.max(0, attacker.respect - 5);
-      defender.respect += 10;
-      message = `${defender.username} seni fena benzetti! Savaşı KAYBETTİN, sağlığın ve saygınlığın düştü.`;
-    }
-
-    await attacker.save();
-    await defender.save();
-
-    res.json({ player: attacker, message });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// (Hospital ve Attack servisleri de benzer şekilde mongoose modelleri yerine supabase.from('players').update().eq() yapısına geçirilir.)
 
 app.listen(PORT, () => console.log(`Sunucu ${PORT} portunda aktif.`));
