@@ -1,0 +1,199 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mafya Savaşları - Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background-color: #0b0f19; }
+  </style>
+</head>
+<body class="text-neutral-100 font-sans">
+
+  <div class="max-w-4xl mx-auto px-4 py-8">
+    
+    <!-- Üst Başlık Bilgisi -->
+    <div class="flex justify-between items-center mb-8 border-b border-zinc-800 pb-4">
+      <div>
+        <h1 class="text-3xl font-extrabold text-red-600 tracking-wider">TEKMAFYA</h1>
+        <p class="text-zinc-500 text-sm">Yeraltı Dünyasının Yeni Lideri Ol</p>
+      </div>
+      <div class="text-right">
+        <span class="text-sm text-zinc-400">Aktif Oyuncu ID:</span>
+        <span id="userIdDisplay" class="bg-zinc-800 text-red-400 px-3 py-1 rounded font-mono font-bold">1</span>
+      </div>
+    </div>
+
+    <!-- Karakter Durumu (Status Bar) -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      
+      <!-- Cüzdan -->
+      <div class="bg-zinc-900 border border-zinc-800 p-4 rounded-lg flex items-center justify-between shadow-lg">
+        <div>
+          <p class="text-xs text-zinc-400 uppercase font-semibold">Cüzdan</p>
+          <h2 id="charMoney" class="text-2xl font-bold text-green-500">$1,000</h2>
+        </div>
+        <span class="text-3xl">💵</span>
+      </div>
+
+      <!-- Enerji Barı -->
+      <div class="bg-zinc-900 border border-zinc-800 p-4 rounded-lg shadow-lg">
+        <div class="flex justify-between items-center mb-1">
+          <p class="text-xs text-zinc-400 uppercase font-semibold">Enerji</p>
+          <span id="charEnergyText" class="text-sm font-bold text-red-500">100 / 100</span>
+        </div>
+        <div class="w-full bg-zinc-800 rounded-full h-3 overflow-hidden">
+          <div id="charEnergyBar" class="bg-red-600 h-full transition-all duration-300" style="width: 100%"></div>
+        </div>
+      </div>
+
+      <!-- Seviye & Deneyim (XP) -->
+      <div class="bg-zinc-900 border border-zinc-800 p-4 rounded-lg shadow-lg">
+        <div class="flex justify-between items-center mb-1">
+          <div>
+            <p class="text-xs text-zinc-400 uppercase font-semibold">Seviye / Saygınlık</p>
+            <h3 id="charLevel" class="text-lg font-bold">Seviye 1</h3>
+          </div>
+          <span id="charXpText" class="text-xs text-zinc-400">0 XP</span>
+        </div>
+        <div class="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
+          <div id="charXpBar" class="bg-blue-600 h-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Ana Panel İçeriği -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      
+      <!-- Suçlar Listesi -->
+      <div class="md:col-span-2 space-y-4">
+        <h2 class="text-xl font-bold text-zinc-300 mb-2">Yeraltı Görevleri (Suçlar)</h2>
+        <div id="crimeList" class="space-y-3">
+          <p class="text-zinc-500">Görevler yükleniyor...</p>
+        </div>
+      </div>
+
+      <!-- Log Ekranı (Konsol) -->
+      <div class="bg-zinc-900 border border-zinc-800 p-4 rounded-lg h-[350px] flex flex-col shadow-lg">
+        <h2 class="text-md font-bold text-zinc-300 border-b border-zinc-800 pb-2 mb-3">İşlem Günlüğü</h2>
+        <div id="logConsole" class="flex-1 overflow-y-auto space-y-2 text-xs font-mono text-zinc-400 scrollbar-thin scrollbar-thumb-zinc-700">
+          <p class="text-zinc-600">[Sistem] Oyuna hoş geldin. Bir suç seçip başla.</p>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    // Vercel üzerinde aynı dizinde çalışacağı için göreceli (relative) URL tanımlanmıştır
+    const API_URL = '/api'; 
+    const USER_ID = '1'; // Test için veritabanındaki 1 numaralı kullanıcı baz alınmıştır
+
+    document.addEventListener('DOMContentLoaded', () => {
+      fetchCharacterData();
+      fetchCrimes();
+      
+      // Belirli aralıklarla (10 saniye) önyüzde enerji durumunu güncel tut
+      setInterval(fetchCharacterData, 10000);
+    });
+
+    // Karakter Bilgilerini API'den Al
+    async function fetchCharacterData() {
+      try {
+        const response = await fetch(`${API_URL}/character`, {
+          headers: { 'x-user-id': USER_ID }
+        });
+        const char = await response.json();
+        
+        if (response.ok) {
+          document.getElementById('charMoney').innerText = `$${char.money.toLocaleString()}`;
+          document.getElementById('charEnergyText').innerText = `${char.energy} / ${char.max_energy}`;
+          document.getElementById('charLevel').innerText = `Seviye ${char.level}`;
+          
+          const energyPercentage = (char.energy / char.max_energy) * 100;
+          document.getElementById('charEnergyBar').style.width = `${energyPercentage}%`;
+
+          const xpProgress = char.xp % 100;
+          document.getElementById('charXpText').innerText = `${char.xp} XP`;
+          document.getElementById('charXpBar').style.width = `${xpProgress}%`;
+        }
+      } catch (error) {
+        addLog('[Hata] Karakter verileri yüklenemedi.', 'text-red-500');
+      }
+    }
+
+    // Aktif Suçları API'den Çek
+    async function fetchCrimes() {
+      try {
+        const response = await fetch(`${API_URL}/crimes`);
+        const crimes = await response.json();
+        
+        const crimeListDiv = document.getElementById('crimeList');
+        crimeListDiv.innerHTML = '';
+
+        if (response.ok) {
+          crimes.forEach(crime => {
+            const card = document.createElement('div');
+            card.className = 'bg-zinc-900 border border-zinc-800 p-4 rounded-lg flex justify-between items-center hover:border-red-900 transition-all shadow-md';
+            card.innerHTML = `
+              <div>
+                <h3 class="font-bold text-md text-zinc-100">${crime.name}</h3>
+                <p class="text-xs text-zinc-400 mt-1">Ödül: $${crime.min_money_reward} - $${crime.max_money_reward} | Şans: %${crime.success_rate}</p>
+              </div>
+              <div class="flex items-center gap-4">
+                <span class="text-xs text-red-500 font-bold">-${crime.energy_cost} Enerji</span>
+                <button onclick="commitCrime(${crime.id})" class="bg-red-700 hover:bg-red-600 text-white font-bold text-xs py-2 px-4 rounded transition-colors uppercase tracking-wider">
+                  Uygula
+                </button>
+              </div>
+            `;
+            crimeListDiv.appendChild(card);
+          });
+        }
+      } catch (error) {
+        addLog('[Hata] Görevler listelenirken hata oluştu.', 'text-red-500');
+      }
+    }
+
+    // Suç İşleme İsteği Gönder
+    async function commitCrime(crimeId) {
+      try {
+        const response = await fetch(`${API_URL}/crimes/commit`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': USER_ID
+          },
+          body: JSON.stringify({ crimeId })
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+          const colorClass = data.status === 'success' ? 'text-green-400' : 'text-red-400';
+          addLog(data.message, colorClass);
+          fetchCharacterData(); // İşlem sonrası yeni değerleri ekrana bas
+        } else {
+          addLog(`[Hata] ${data.error}`, 'text-amber-500');
+        }
+      } catch (error) {
+        addLog('[Hata] Sunucuyla bağlantı kesildi.', 'text-red-500');
+      }
+    }
+
+    // Günlük Ekranına Log Satırı Yaz
+    function addLog(text, colorClass = 'text-zinc-400') {
+      const consoleDiv = document.getElementById('logConsole');
+      const time = new Date().toLocaleTimeString();
+      const p = document.createElement('p');
+      p.className = colorClass;
+      p.innerHTML = `<span class="text-zinc-600">[${time}]</span> ${text}`;
+      consoleDiv.appendChild(p);
+      consoleDiv.scrollTop = consoleDiv.scrollHeight;
+    }
+  </script>
+</body>
+</html>
